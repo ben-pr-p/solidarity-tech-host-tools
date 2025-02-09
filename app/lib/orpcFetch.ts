@@ -4,7 +4,7 @@ import { RPCLink } from "@orpc/client/fetch";
 import type { router } from "@/orpc/router.server";
 
 const rpcLink = new RPCLink({
-  url: "http://localhost:5173/orpc",
+  url: `${typeof window !== "undefined" && window.location.origin}/orpc`,
   // fetch: optional override for the default fetch function
   // headers: provide additional headers
 });

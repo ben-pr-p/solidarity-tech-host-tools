@@ -6,6 +6,7 @@
 		"loglayer",
 		"orpc",
 		"pglite",
+		"rsvps",
 		"sendgrid"
 	]
 }
