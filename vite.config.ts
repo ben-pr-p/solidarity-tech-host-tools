@@ -14,8 +14,4 @@ export default defineConfig({
     reactRouter(),
     tsconfigPaths(),
   ],
-  build: {
-    cssMinify: true,
-    ssr: false,
-  },
 });

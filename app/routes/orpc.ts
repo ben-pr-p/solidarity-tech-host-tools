@@ -1,25 +1,24 @@
 import { RPCHandler } from "@orpc/server/fetch";
 import { router } from "@/orpc/router.server";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-// import { getKysely } from "@/database/db.server";
+import type { Config } from "@/config.server";
 
 const rpcHandler = new RPCHandler(router);
 
-async function handleRequest(request: Request) {
+async function handleRequest(request: Request, env: Config) {
   const { response } = await rpcHandler.handle(request, {
     prefix: "/orpc",
-    context: {},
-    // context: {
-    //   db: await getKysely(),
-    // },
+    context: {
+      env,
+    },
   });
   return response;
 }
 
-export const loader = async ({ request }: LoaderFunctionArgs) => {
-  return await handleRequest(request);
+export const loader = async ({ request, context }: LoaderFunctionArgs) => {
+  return await handleRequest(request, context.env);
 };
 
-export const action = async ({ request }: ActionFunctionArgs) => {
-  return await handleRequest(request);
+export const action = async ({ request, context }: ActionFunctionArgs) => {
+  return await handleRequest(request, context.env);
 };

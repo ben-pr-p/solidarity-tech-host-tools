@@ -2,24 +2,25 @@ import { createORPCReactQueryUtils } from "@orpc/react-query";
 import { createRouterClient } from "@orpc/server";
 import { router } from "@/orpc/router.server";
 import { QueryClient, dehydrate } from "@tanstack/react-query";
-// import { getKysely } from "@/database/db.server";
+import { type Config } from "@/config.server";
 
-export const orpcCaller = createRouterClient(router, {
-  context: {},
-  // context: {
-  // db: await getKysely(),
-  // },
-});
-export const orpcCallerQuery = createORPCReactQueryUtils(orpcCaller);
+export const getORPCCallerQuery = (env: Config) =>
+  createORPCReactQueryUtils(
+    createRouterClient(router, {
+      context: {
+        env,
+      },
+    })
+  );
 
 type WithPrefetchFn<T> = (
   queryClient: QueryClient,
-  orpc: typeof orpcCallerQuery
+  orpc: ReturnType<typeof getORPCCallerQuery>
 ) => Promise<T>;
 
-export async function withPrefetch<T>(fn: WithPrefetchFn<T>) {
+export async function withPrefetch<T>(env: Config, fn: WithPrefetchFn<T>) {
   const queryClient = new QueryClient();
-  const result = await fn(queryClient, orpcCallerQuery);
+  const result = await fn(queryClient, getORPCCallerQuery(env));
   const dehydratedState = dehydrate(queryClient);
   return { ...result, __dehydratedState: dehydratedState };
 }

@@ -11,14 +11,13 @@ import type { Route } from "./+types/admin";
 import { withPrefetch } from "@/lib/orpcCaller.server";
 import { useQuery } from "@tanstack/react-query";
 import { orpcFetchQuery } from "@/lib/orpcFetch";
-import { config } from "@/config.server";
 
-export async function loader({ request }: Route.LoaderArgs) {
+export async function loader({ request, context }: Route.LoaderArgs) {
   const searchParams = new URL(request.url).searchParams;
   const password = searchParams.get("pw");
 
-  return await withPrefetch(async (queryClient, orpc) => {
-    if (password !== config.ADMIN_PASSWORD) {
+  return await withPrefetch(context.env, async (queryClient, orpc) => {
+    if (password !== context.env.ADMIN_PASSWORD) {
       return { unauthorized: true, providedPw: password };
     }
     await queryClient.prefetchQuery(
@@ -57,7 +56,7 @@ function EventAccordion({ event }: { event: EventWithFutureSessions }) {
 }
 
 type SessionWithSessionHostURL = EventSession & {
-  host_url: string;
+  host_after_domain: string;
 };
 
 function Session({ session }: { session: SessionWithSessionHostURL }) {
@@ -73,9 +72,14 @@ function Session({ session }: { session: SessionWithSessionHostURL }) {
     return new Date(dateString).toLocaleDateString("en-US", options);
   };
 
+  const hostUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}${session.host_after_domain}`
+      : session.host_after_domain;
+
   const copyHostUrl = () => {
     navigator.clipboard
-      .writeText(session.host_url)
+      .writeText(hostUrl)
       .then(() => alert("Host URL copied to clipboard!"))
       .catch((err) => console.error("Failed to copy: ", err));
   };

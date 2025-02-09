@@ -5,21 +5,12 @@ import {
   type InferRouterOutputs,
 } from "@orpc/server";
 import { z } from "zod";
-import { config } from "@/config.server";
-import {
-  createEventAttendance,
-  getEvent,
-  listEventAttendances,
-  listEventRSVPs,
-  listEvents,
-  listEventSessions,
-  deleteEventAttendance,
-} from "@/lib/solidarity.server";
-import { decrypt, encrypt } from "@/lib/encrypt.server";
-// type MyDB = Awaited<ReturnType<typeof getKysely>>;
+import { getConfig, type Config } from "@/config.server";
+import { getSolidarity } from "@/lib/solidarity.server";
+import { getEncryptor } from "@/lib/encrypt.server";
 
 type ORPCContext = {
-  // db: MyDB;
+  env: Config;
 };
 
 // DB is inserted in request handler or test driver
@@ -44,7 +35,7 @@ export const router = base.router({
     .input(z.object({ pw: z.string() }))
     .handler(async ({ input, context }) => {
       const searchParamsPw = input.pw;
-      if (searchParamsPw !== config.ADMIN_PASSWORD) {
+      if (searchParamsPw !== context.env.ADMIN_PASSWORD) {
         throw new ORPCError({
           code: "UNAUTHORIZED",
           message: "Invalid password",
@@ -52,39 +43,47 @@ export const router = base.router({
         });
       }
 
-      const events = await listEvents();
+      const solidarity = getSolidarity(context.env.SOLIDARITY_TECH_API_KEY);
+      const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
+      const events = await solidarity.listEvents();
 
-      return events.data
-        .map((event) => {
+      return await Promise.all(
+        events.data.map(async (event) => {
           const futureSessions = event.event_sessions.filter(
             (session) => new Date(session.start_time) > new Date()
           );
 
-          const futureSessionsWithHostURLs = futureSessions.map((session) => {
-            const encryptedSessionHostURLKey = encrypt({
-              eventId: event.id,
-              sessionId: session.id,
-            });
+          const futureSessionsWithHostURLs = await Promise.all(
+            futureSessions.map(async (session) => {
+              const encryptedSessionHostURLKey = await encryptor.encrypt({
+                eventId: event.id,
+                sessionId: session.id,
+              });
 
-            const hostUrl = new URL(`${config.BASE_URL}/host`);
-            hostUrl.searchParams.set("eventKey", encryptedSessionHostURLKey);
+              const hostSearchParams = new URLSearchParams();
+              hostSearchParams.set("eventKey", encryptedSessionHostURLKey);
 
-            return {
-              ...session,
-              host_url: hostUrl.toString(),
-            };
-          });
+              return {
+                ...session,
+                host_after_domain: `/host?${hostSearchParams.toString()}`,
+              };
+            })
+          );
 
           return { ...event, futureSessions: futureSessionsWithHostURLs };
         })
-        .filter((event) => event.futureSessions.length > 0);
+      ).then((events) =>
+        events.filter((event) => event.futureSessions.length > 0)
+      );
     }),
 
   getEventWithSessionById: base
     .input(z.object({ eventKey: z.string() }))
     .handler(async ({ input, context }) => {
-      const { eventId, sessionId } = decrypt(input.eventKey);
-      const response = await getEvent(eventId);
+      const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
+      const { eventId, sessionId } = await encryptor.decrypt(input.eventKey);
+      const solidarity = getSolidarity(context.env.SOLIDARITY_TECH_API_KEY);
+      const response = await solidarity.getEvent(eventId);
       const event = response.data;
       const session = event.event_sessions.find(
         (session) => session.id === sessionId
@@ -95,16 +94,22 @@ export const router = base.router({
   getSessionRsvpsByEventIdAndSessionId: base
     .input(z.object({ eventKey: z.string() }))
     .handler(async ({ input, context }) => {
-      const { eventId, sessionId } = decrypt(input.eventKey);
+      const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
+      const { eventId, sessionId } = await encryptor.decrypt(input.eventKey);
+      const solidarity = getSolidarity(context.env.SOLIDARITY_TECH_API_KEY);
       const [sessionRsvps, sessionAttendances] = await Promise.all([
-        listEventRSVPs({
-          event_id: eventId,
-          session_id: sessionId,
-        }).then((response) => response.data),
-        listEventAttendances({
-          event_id: eventId,
-          session_id: sessionId,
-        }).then((response) => response.data),
+        solidarity
+          .listEventRSVPs({
+            event_id: eventId,
+            session_id: sessionId,
+          })
+          .then((response) => response.data),
+        solidarity
+          .listEventAttendances({
+            event_id: eventId,
+            session_id: sessionId,
+          })
+          .then((response) => response.data),
       ]);
 
       const rsvpsWithUserDetailsAndAttendance = sessionRsvps.map((rsvp) => ({
@@ -125,14 +130,16 @@ export const router = base.router({
       })
     )
     .handler(async ({ input, context }) => {
-      const { eventId, sessionId } = decrypt(input.eventKey);
+      const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
+      const { eventId, sessionId } = await encryptor.decrypt(input.eventKey);
       const payload = {
         event_id: eventId,
         event_session_id: sessionId,
         user_id: input.userId,
         attended: true,
       };
-      const response = await createEventAttendance(payload);
+      const solidarity = getSolidarity(context.env.SOLIDARITY_TECH_API_KEY);
+      const response = await solidarity.createEventAttendance(payload);
       return response.data;
     }),
 
@@ -144,9 +151,11 @@ export const router = base.router({
       })
     )
     .handler(async ({ input, context }) => {
-      const { eventId, sessionId } = decrypt(input.eventKey);
+      const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
+      const { eventId, sessionId } = await encryptor.decrypt(input.eventKey);
       // Fetch existing attendances to find the attendance ID
-      const attendancesResponse = await listEventAttendances({
+      const solidarity = getSolidarity(context.env.SOLIDARITY_TECH_API_KEY);
+      const attendancesResponse = await solidarity.listEventAttendances({
         event_id: eventId,
         session_id: sessionId,
       });
@@ -165,7 +174,7 @@ export const router = base.router({
       }
 
       // Delete the attendance record
-      await deleteEventAttendance(attendanceToDelete.id);
+      await solidarity.deleteEventAttendance(attendanceToDelete.id);
       return { success: true };
     }),
 });

@@ -1,8 +1,7 @@
 import type { Route } from "./+types/host";
-import { useQuery, useSuspenseQuery, useMutation } from "@tanstack/react-query";
+import { useSuspenseQuery, useMutation } from "@tanstack/react-query";
 import { withPrefetch } from "@/lib/orpcCaller.server";
 import { orpcFetchQuery } from "@/lib/orpcFetch";
-import { decrypt } from "@/lib/encrypt.server";
 import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,14 +10,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Phone, MessageSquare, CheckCircle2, Users } from "lucide-react";
 import type { EventRSVP } from "@/lib/solidarity.server";
 import { cn } from "@/lib/utils";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import invariant from "tiny-invariant";
-import { config } from "@/config.server";
+import { getEncryptor } from "@/lib/encrypt.server";
 
 export function meta({ data }: Route.MetaArgs) {
   const sessionStartTimeDate = new Date(data.session?.start_time ?? "");
@@ -39,13 +32,14 @@ export function meta({ data }: Route.MetaArgs) {
   ];
 }
 
-export async function loader({ request }: Route.LoaderArgs) {
+export async function loader({ request, context }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const eventKey = url.searchParams.get("eventKey");
   invariant(eventKey, "eventKey is required");
-  const { eventId, sessionId } = decrypt(eventKey);
+  const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
+  const { eventId, sessionId } = await encryptor.decrypt(eventKey);
 
-  return await withPrefetch(async (queryClient, orpc) => {
+  return await withPrefetch(context.env, async (queryClient, orpc) => {
     const { event, session } = await queryClient.fetchQuery(
       orpc.getEventWithSessionById.queryOptions({
         input: {
@@ -71,10 +65,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       session,
       eventKey,
       meta: {
-        titleHostPrefix: config.META_TITLE_HOST_PREFIX,
-        description: config.META_DESCRIPTION,
-        image: config.META_SHARE_IMAGE_URL,
-        icon: config.FAVICON_URL,
+        titleHostPrefix: context.env.META_TITLE_HOST_PREFIX,
+        description: context.env.META_DESCRIPTION,
+        image: context.env.META_SHARE_IMAGE_URL,
+        icon: context.env.FAVICON_URL,
       },
     };
   });

@@ -1,4 +1,4 @@
-import { config } from "@/config.server";
+import { getConfig } from "@/config.server";
 
 /*
 API documentation: https://docs.solidarity.tech/reference/get_events-id
@@ -48,9 +48,6 @@ curl --request POST \
 curl --request DELETE \
      --url https://api.solidarity.tech/v1/event_attendances/id
 */
-
-const SOLIDARITY_TECH_API_KEY = config.SOLIDARITY_TECH_API_KEY;
-const BASE_URL = "https://api.solidarity.tech/v1";
 
 // Request Types
 export interface ListEventsParams {
@@ -195,113 +192,123 @@ export interface EventRSVP {
   updated_at: string;
 }
 
-const headers = {
-  authorization: `Bearer ${SOLIDARITY_TECH_API_KEY}`,
-  "content-type": "application/json",
-};
+export function getSolidarity(apiKey: string) {
+  const BASE_URL = "https://api.solidarity.tech/v1";
 
-async function apiRequest<T>(
-  path: string,
-  options: RequestOptions = {}
-): Promise<T> {
-  const { method = "GET", params, body } = options;
+  const getHeaders = () => ({
+    authorization: `Bearer ${apiKey}`,
+    "content-type": "application/json",
+  });
 
-  let url = `${BASE_URL}${path}`;
-
-  if (params) {
-    const searchParams = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) {
-        searchParams.append(key, value.toString());
+  async function apiRequest<T>(
+    path: string,
+    options: RequestOptions = {}
+  ): Promise<T> {
+    const { method = "GET", params, body } = options;
+    let url = `${BASE_URL}${path}`;
+    if (params) {
+      const searchParams = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.append(key, value.toString());
+        }
+      });
+      const queryString = searchParams.toString();
+      if (queryString) {
+        url += `?${queryString}`;
       }
-    });
-    const queryString = searchParams.toString();
-    if (queryString) {
-      url += `?${queryString}`;
     }
+    const response = await fetch(url, {
+      method,
+      headers: getHeaders(),
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    return response.json();
   }
 
-  const response = await fetch(url, {
-    method,
-    headers,
-    ...(body ? { body: JSON.stringify(body) } : {}),
-  });
+  async function listEvents(
+    params: ListEventsParams = {}
+  ): Promise<ApiResponse<Event[]>> {
+    return apiRequest("/events", {
+      params: {
+        _limit: params.limit,
+        _offset: params.offset,
+        _since: params.since,
+      },
+    });
+  }
 
-  return response.json();
-}
+  async function getEvent(eventId: number): Promise<ApiResponse<Event>> {
+    return apiRequest(`/events/${eventId}`);
+  }
 
-export async function listEvents(
-  params: ListEventsParams = {}
-): Promise<ApiResponse<Event[]>> {
-  return apiRequest("/events", {
-    params: {
-      _limit: params.limit,
-      _offset: params.offset,
-      _since: params.since,
-    },
-  });
-}
+  async function listEventSessions(
+    params: ListEventSessionsParams
+  ): Promise<ApiResponse<SimpleEventSession[]>> {
+    return apiRequest("/event_sessions", {
+      params: {
+        _limit: params.limit,
+        _offset: params.offset,
+        _since: params.since,
+        event_id: params.event_id,
+      },
+    });
+  }
 
-export async function getEvent(eventId: number): Promise<ApiResponse<Event>> {
-  return apiRequest(`/events/${eventId}`);
-}
+  async function listEventRSVPs(
+    params: ListEventRSVPsParams
+  ): Promise<ApiResponse<EventRSVP[]>> {
+    return apiRequest("/event_rsvps", {
+      params: {
+        _limit: params.limit,
+        _offset: params.offset,
+        _since: params.since,
+        event_id: params.event_id,
+        session_id: params.session_id,
+      },
+    });
+  }
 
-export async function listEventSessions(
-  params: ListEventSessionsParams
-): Promise<ApiResponse<SimpleEventSession[]>> {
-  return apiRequest("/event_sessions", {
-    params: {
-      _limit: params.limit,
-      _offset: params.offset,
-      _since: params.since,
-      event_id: params.event_id,
-    },
-  });
-}
+  async function listEventAttendances(
+    params: ListEventAttendancesParams
+  ): Promise<ApiResponse<EventAttendance[]>> {
+    return apiRequest("/event_attendances", {
+      params: {
+        _limit: params.limit,
+        _offset: params.offset,
+        _since: params.since,
+        event_id: params.event_id,
+        session_id: params.session_id,
+      },
+    });
+  }
 
-export async function listEventRSVPs(
-  params: ListEventRSVPsParams
-): Promise<ApiResponse<EventRSVP[]>> {
-  return apiRequest("/event_rsvps", {
-    params: {
-      _limit: params.limit,
-      _offset: params.offset,
-      _since: params.since,
-      event_id: params.event_id,
-      session_id: params.session_id,
-    },
-  });
-}
+  async function createEventAttendance(
+    params: CreateEventAttendanceParams
+  ): Promise<ApiResponse<EventAttendance>> {
+    return apiRequest("/event_attendances", {
+      method: "POST",
+      body: params,
+    });
+  }
 
-export async function listEventAttendances(
-  params: ListEventAttendancesParams
-): Promise<ApiResponse<EventAttendance[]>> {
-  return apiRequest("/event_attendances", {
-    params: {
-      _limit: params.limit,
-      _offset: params.offset,
-      _since: params.since,
-      event_id: params.event_id,
-      session_id: params.session_id,
-    },
-  });
-}
+  async function deleteEventAttendance(
+    attendanceId: number
+  ): Promise<ApiResponse<void>> {
+    return apiRequest(`/event_attendances/${attendanceId}`, {
+      method: "DELETE",
+    });
+  }
 
-export async function createEventAttendance(
-  params: CreateEventAttendanceParams
-): Promise<ApiResponse<EventAttendance>> {
-  return apiRequest("/event_attendances", {
-    method: "POST",
-    body: params,
-  });
-}
-
-export async function deleteEventAttendance(
-  attendanceId: number
-): Promise<ApiResponse<void>> {
-  return apiRequest(`/event_attendances/${attendanceId}`, {
-    method: "DELETE",
-  });
+  return {
+    listEvents,
+    getEvent,
+    listEventSessions,
+    listEventRSVPs,
+    listEventAttendances,
+    createEventAttendance,
+    deleteEventAttendance,
+  };
 }
 
 /*

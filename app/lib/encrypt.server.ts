@@ -1,10 +1,5 @@
-import crypto from "node:crypto";
-import { config } from "@/config.server";
-
-const ALGORITHM = "aes-256-gcm";
-const KEY = Buffer.from(config.SYMMETRIC_ENCRYPTION_KEY, "base64");
+const ALGORITHM = "AES-GCM";
 const IV_LENGTH = 12; // Recommended IV size for GCM
-const AUTH_TAG_LENGTH = 16; // Default auth tag length for GCM
 
 /**
  * New compact binary payload version.
@@ -15,59 +10,52 @@ type FullPayload = {
   sessionId: number;
 };
 
-export function encrypt(payload: FullPayload) {
-  // Convert the payload into a compact binary representation.
-  const payloadBuffer = encodePayload(payload);
+export function getEncryptor(symmetricKey: string) {
+  const KEY = Uint8Array.from(atob(symmetricKey), (c) => c.charCodeAt(0));
 
-  // Generate a random IV.
-  const iv = crypto.randomBytes(IV_LENGTH);
-  const cipher = crypto.createCipheriv(ALGORITHM, KEY, iv);
+  // Helper function: Encode the FullPayload into an 8-byte Uint8Array.
+  function encodePayload(payload: FullPayload): Uint8Array {
+    const buffer = new ArrayBuffer(8);
+    const view = new DataView(buffer);
+    view.setUint32(0, payload.eventId);
+    view.setUint32(4, payload.sessionId);
+    return new Uint8Array(buffer);
+  }
 
-  // Encrypt the payloadBuffer (no intermediate base64 or JSON conversion).
-  const ciphertext = Buffer.concat([
-    cipher.update(payloadBuffer),
-    cipher.final(),
-  ]);
-  const authTag = cipher.getAuthTag();
+  // Helper function: Decode the 8-byte Uint8Array back to FullPayload.
+  function decodePayload(buffer: Uint8Array): FullPayload {
+    const view = new DataView(buffer.buffer);
+    return {
+      eventId: view.getUint32(0),
+      sessionId: view.getUint32(4),
+    };
+  }
 
-  // Pack results into a single buffer: [iv | authTag | ciphertext]
-  const encryptedBuffer = Buffer.concat([iv, authTag, ciphertext]);
+  async function encrypt(payload: FullPayload): Promise<string> {
+    const payloadBuffer = encodePayload(payload);
+    const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
+    const cipher = await crypto.subtle.encrypt(
+      { name: ALGORITHM, iv },
+      await crypto.subtle.importKey("raw", KEY, ALGORITHM, false, ["encrypt"]),
+      payloadBuffer
+    );
+    const encryptedBuffer = new Uint8Array([...iv, ...new Uint8Array(cipher)]);
+    return btoa(String.fromCharCode(...encryptedBuffer));
+  }
 
-  // Return a single Base64 encoded string.
-  return encryptedBuffer.toString("base64");
-}
+  async function decrypt(encryptedBase64: string): Promise<FullPayload> {
+    const encryptedBuffer = Uint8Array.from(atob(encryptedBase64), (c) =>
+      c.charCodeAt(0)
+    );
+    const iv = encryptedBuffer.slice(0, IV_LENGTH);
+    const ciphertext = encryptedBuffer.slice(IV_LENGTH);
+    const decrypted = await crypto.subtle.decrypt(
+      { name: ALGORITHM, iv },
+      await crypto.subtle.importKey("raw", KEY, ALGORITHM, false, ["decrypt"]),
+      ciphertext
+    );
+    return decodePayload(new Uint8Array(decrypted));
+  }
 
-export function decrypt(encryptedBase64: string): FullPayload {
-  // Decode the Base64 message to get the full Buffer.
-  const encryptedBuffer = Buffer.from(encryptedBase64, "base64");
-
-  // Extract the IV, auth tag, and ciphertext based on fixed lengths.
-  const iv = encryptedBuffer.slice(0, IV_LENGTH);
-  const authTag = encryptedBuffer.slice(IV_LENGTH, IV_LENGTH + AUTH_TAG_LENGTH);
-  const ciphertext = encryptedBuffer.slice(IV_LENGTH + AUTH_TAG_LENGTH);
-
-  const decipher = crypto.createDecipheriv(ALGORITHM, KEY, iv);
-  decipher.setAuthTag(authTag);
-
-  const payloadBuffer = Buffer.concat([
-    decipher.update(ciphertext),
-    decipher.final(),
-  ]);
-  return decodePayload(payloadBuffer);
-}
-
-// Helper function: Encode the FullPayload into an 8-byte buffer.
-function encodePayload(payload: FullPayload): Buffer {
-  const buffer = Buffer.alloc(8); // 4 bytes for eventId, 4 bytes for sessionId
-  buffer.writeUInt32BE(payload.eventId, 0); // Big endian 32-bit
-  buffer.writeUInt32BE(payload.sessionId, 4);
-  return buffer;
-}
-
-// Helper function: Decode the 8-byte Buffer back to FullPayload.
-function decodePayload(buffer: Buffer): FullPayload {
-  return {
-    eventId: buffer.readUInt32BE(0),
-    sessionId: buffer.readUInt32BE(4),
-  };
+  return { encrypt, decrypt };
 }

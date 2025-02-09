@@ -1,6 +1,8 @@
 import { redirect } from "react-router";
-import { config } from "@/config.server";
+import type { Route } from "./+types/home-redirect";
 
-export async function loader() {
-  return redirect(config.ROOT_REDIRECT_URL, { status: 302 });
+export async function loader({ context }: Route.LoaderArgs) {
+  return redirect(context.env.ROOT_REDIRECT_URL, {
+    status: 302,
+  });
 }

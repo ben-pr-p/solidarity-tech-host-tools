@@ -1,12 +1,11 @@
 import { Outlet } from "react-router";
-import { config } from "@/config.server";
 import type { Route } from "./+types/layout";
 
-export async function loader() {
+export async function loader({ context }: Route.LoaderArgs) {
   return {
-    title: config.APP_TITLE,
-    headerBackgroundColor: config.HEADER_BACKGROUND_COLOR,
-    headerTextColor: config.HEADER_TEXT_COLOR,
+    title: context.env.APP_TITLE,
+    headerBackgroundColor: context.env.HEADER_BACKGROUND_COLOR,
+    headerTextColor: context.env.HEADER_TEXT_COLOR,
   };
 }
 
