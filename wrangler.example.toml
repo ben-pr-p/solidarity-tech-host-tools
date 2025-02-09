@@ -1,0 +1,32 @@
+workers_dev = true
+name = "example-app"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+main = "./build/server/index.js"
+routes = [{ pattern = "example.com", custom_domain = true }]
+
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[vars]
+SOLIDARITY_TECH_API_KEY = "EXAMPLE_KEY"
+ROOT_REDIRECT_URL = "https://example.com/"
+APP_TITLE = "Example App"
+SYMMETRIC_ENCRYPTION_KEY = "EXAMPLE_ENCRYPTION_KEY"
+BASE_URL = "http://localhost:5173"
+ADMIN_PASSWORD = "EXAMPLE_PASSWORD"
+FAVICON_URL = "https://example.com/favicon.ico"
+META_SHARE_IMAGE_URL = "https://example.com/share.jpg"
+META_TITLE = "Example App"
+META_TITLE_HOST_PREFIX = "Example: "
+META_DESCRIPTION = "Example App Description"
+HEADER_BACKGROUND_COLOR = "#000000"
+HEADER_TEXT_COLOR = "#FFFFFF"
+
+
+[assets]
+directory = "./build/client/"
+binding = "ASSETS"
+run_worker_first = false
