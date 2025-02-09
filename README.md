@@ -20,3 +20,23 @@ Styling options as env vars:
 - `META_TITLE_HOST_PREFIX`: Prefix for the meta title when hosting.
 - `HEADER_BACKGROUND_COLOR`: Background color for the header.
 - `HEADER_TEXT_COLOR`: Text color for the header.
+
+## Deployment
+
+There's a provided `wrangler.example.toml` file that can be used to deploy the application.
+
+```bash
+cp wrangler.example.toml wrangler.toml
+```
+
+...make your edits...
+
+```bash
+bun run build && bunx wrangler deploy
+```
+
+Builds + deploys are pretty fast - under a minute.
+
+
+
+
