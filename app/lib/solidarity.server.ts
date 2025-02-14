@@ -1,4 +1,4 @@
-import { getConfig } from "@/config.server";
+import { getConfig, type Config } from "@/config.server";
 
 /*
 API documentation: https://docs.solidarity.tech/reference/get_events-id
@@ -47,6 +47,43 @@ curl --request POST \
 ## Delete event attendance
 curl --request DELETE \
      --url https://api.solidarity.tech/v1/event_attendances/id
+
+
+
+
+## RSVP A New Person
+-- Create new person
+curl --request POST \
+     --url https://api.solidarity.tech/v1/users \
+     --header 'content-type: application/json' \
+     --data '
+{
+  "phone_number": "2145555555",
+  "email": "fakeemail@email.com",
+  "first_name": "First",
+  "last_name": "last",
+  "sms_permission": true,
+  "call_permission": true,
+  "email_permission": true
+}
+'
+
+-- RSVP to event
+curl --request POST \
+     --url https://api.solidarity.tech/v1/event_rsvps \
+     --header 'content-type: application/json' \
+     --data '
+{
+  "is_attending": "yes",
+  "event_id": 10,
+  "event_session_id": 103,
+  "user_id": 1,
+  "is_confirmed": true,
+  "source": "host-toolkit",
+  "source_system": "host-toolkit"
+}
+'
+
 */
 
 // Request Types
@@ -192,11 +229,38 @@ export interface EventRSVP {
   updated_at: string;
 }
 
-export function getSolidarity(apiKey: string) {
+interface CreateUserParams {
+  phone_number: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  sms_permission?: boolean;
+  call_permission?: boolean;
+  email_permission?: boolean;
+}
+
+interface CreateEventRSVPParams {
+  is_attending: "yes" | "no";
+  event_id: number;
+  event_session_id: number;
+  user_id: number;
+  is_confirmed?: boolean;
+  source?: string;
+  source_system?: string;
+  agent_user_id: number;
+}
+
+interface RsvpNewPersonParams {
+  person: CreateUserParams;
+  event_id: number;
+  event_session_id: number;
+}
+
+export function getSolidarity(config: Config) {
   const BASE_URL = "https://api.solidarity.tech/v1";
 
   const getHeaders = () => ({
-    authorization: `Bearer ${apiKey}`,
+    authorization: `Bearer ${config.SOLIDARITY_TECH_API_KEY}`,
     "content-type": "application/json",
   });
 
@@ -226,16 +290,48 @@ export function getSolidarity(apiKey: string) {
     return response.json();
   }
 
+  async function fetchAllPages<T>(
+    fetchPage: (limit: number, offset: number) => Promise<ApiResponse<T[]>>,
+    params: { limit?: number; offset?: number } = {}
+  ): Promise<ApiResponse<T[]>> {
+    const allData: T[] = [];
+    let offset = params.offset || 0;
+    const limit = params.limit || 100;
+
+    while (true) {
+      const response = await fetchPage(limit, offset);
+      allData.push(...response.data);
+
+      if (response.data.length < limit) {
+        // Last page reached
+        return {
+          data: allData,
+          meta: {
+            ...response.meta,
+            total_count: allData.length,
+            offset: 0,
+          },
+        };
+      }
+
+      offset += limit;
+    }
+  }
+
   async function listEvents(
     params: ListEventsParams = {}
   ): Promise<ApiResponse<Event[]>> {
-    return apiRequest("/events", {
-      params: {
-        _limit: params.limit,
-        _offset: params.offset,
-        _since: params.since,
-      },
-    });
+    return fetchAllPages(
+      (limit, offset) =>
+        apiRequest("/events", {
+          params: {
+            _limit: limit,
+            _offset: offset,
+            _since: params.since,
+          },
+        }),
+      params
+    );
   }
 
   async function getEvent(eventId: number): Promise<ApiResponse<Event>> {
@@ -258,29 +354,37 @@ export function getSolidarity(apiKey: string) {
   async function listEventRSVPs(
     params: ListEventRSVPsParams
   ): Promise<ApiResponse<EventRSVP[]>> {
-    return apiRequest("/event_rsvps", {
-      params: {
-        _limit: params.limit,
-        _offset: params.offset,
-        _since: params.since,
-        event_id: params.event_id,
-        session_id: params.session_id,
-      },
-    });
+    return fetchAllPages(
+      (limit, offset) =>
+        apiRequest("/event_rsvps", {
+          params: {
+            _limit: limit,
+            _offset: offset,
+            _since: params.since,
+            event_id: params.event_id,
+            session_id: params.session_id,
+          },
+        }),
+      params
+    );
   }
 
   async function listEventAttendances(
     params: ListEventAttendancesParams
   ): Promise<ApiResponse<EventAttendance[]>> {
-    return apiRequest("/event_attendances", {
-      params: {
-        _limit: params.limit,
-        _offset: params.offset,
-        _since: params.since,
-        event_id: params.event_id,
-        session_id: params.session_id,
-      },
-    });
+    return fetchAllPages(
+      (limit, offset) =>
+        apiRequest("/event_attendances", {
+          params: {
+            _limit: limit,
+            _offset: offset,
+            _since: params.since,
+            event_id: params.event_id,
+            session_id: params.session_id,
+          },
+        }),
+      params
+    );
   }
 
   async function createEventAttendance(
@@ -300,6 +404,48 @@ export function getSolidarity(apiKey: string) {
     });
   }
 
+  async function createUser(params: CreateUserParams): Promise<{ id: number }> {
+    return apiRequest("/users", {
+      method: "POST",
+      body: params,
+    });
+  }
+
+  async function createEventRSVP(
+    params: CreateEventRSVPParams
+  ): Promise<ApiResponse<EventRSVP>> {
+    return apiRequest("/event_rsvps", {
+      method: "POST",
+      body: params,
+    });
+  }
+
+  async function rsvpNewPerson(
+    params: RsvpNewPersonParams
+  ): Promise<{ success: boolean }> {
+    // Create the new user first
+    const newUser = await createUser({
+      ...params.person,
+      sms_permission: params.person.sms_permission ?? true,
+      call_permission: params.person.call_permission ?? true,
+      email_permission: params.person.email_permission ?? true,
+    });
+
+    // Then create the RSVP
+    await createEventRSVP({
+      is_attending: "yes",
+      event_id: params.event_id,
+      event_session_id: params.event_session_id,
+      agent_user_id: config.CREATE_RSVP_AGENT_USER_ID,
+      user_id: newUser.id,
+      is_confirmed: true,
+      source: "host-toolkit",
+      source_system: "host-toolkit",
+    });
+
+    return { success: true };
+  }
+
   return {
     listEvents,
     getEvent,
@@ -308,6 +454,9 @@ export function getSolidarity(apiKey: string) {
     listEventAttendances,
     createEventAttendance,
     deleteEventAttendance,
+    createUser,
+    createEventRSVP,
+    rsvpNewPerson,
   };
 }
 

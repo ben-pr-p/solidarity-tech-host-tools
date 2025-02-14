@@ -5,7 +5,7 @@ import {
   type InferRouterOutputs,
 } from "@orpc/server";
 import { z } from "zod";
-import { getConfig, type Config } from "@/config.server";
+import { type Config } from "@/config.server";
 import { getSolidarity } from "@/lib/solidarity.server";
 import { getEncryptor } from "@/lib/encrypt.server";
 
@@ -43,7 +43,7 @@ export const router = base.router({
         });
       }
 
-      const solidarity = getSolidarity(context.env.SOLIDARITY_TECH_API_KEY);
+      const solidarity = getSolidarity(context.env);
       const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
       const events = await solidarity.listEvents();
 
@@ -82,7 +82,7 @@ export const router = base.router({
     .handler(async ({ input, context }) => {
       const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
       const { eventId, sessionId } = await encryptor.decrypt(input.eventKey);
-      const solidarity = getSolidarity(context.env.SOLIDARITY_TECH_API_KEY);
+      const solidarity = getSolidarity(context.env);
       const response = await solidarity.getEvent(eventId);
       const event = response.data;
       const session = event.event_sessions.find(
@@ -96,7 +96,7 @@ export const router = base.router({
     .handler(async ({ input, context }) => {
       const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
       const { eventId, sessionId } = await encryptor.decrypt(input.eventKey);
-      const solidarity = getSolidarity(context.env.SOLIDARITY_TECH_API_KEY);
+      const solidarity = getSolidarity(context.env);
       const [sessionRsvps, sessionAttendances] = await Promise.all([
         solidarity
           .listEventRSVPs({
@@ -138,7 +138,7 @@ export const router = base.router({
         user_id: input.userId,
         attended: true,
       };
-      const solidarity = getSolidarity(context.env.SOLIDARITY_TECH_API_KEY);
+      const solidarity = getSolidarity(context.env);
       const response = await solidarity.createEventAttendance(payload);
       return response.data;
     }),
@@ -154,7 +154,7 @@ export const router = base.router({
       const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
       const { eventId, sessionId } = await encryptor.decrypt(input.eventKey);
       // Fetch existing attendances to find the attendance ID
-      const solidarity = getSolidarity(context.env.SOLIDARITY_TECH_API_KEY);
+      const solidarity = getSolidarity(context.env);
       const attendancesResponse = await solidarity.listEventAttendances({
         event_id: eventId,
         session_id: sessionId,
@@ -175,6 +175,31 @@ export const router = base.router({
 
       // Delete the attendance record
       await solidarity.deleteEventAttendance(attendanceToDelete.id);
+      return { success: true };
+    }),
+
+  rsvpNewPerson: base
+    .input(
+      z.object({
+        eventKey: z.string(),
+        person: z.object({
+          first_name: z.string(),
+          last_name: z.string(),
+          phone_number: z.string(),
+          email: z.string(),
+        }),
+      })
+    )
+    .handler(async ({ input, context }) => {
+      const solidarity = getSolidarity(context.env);
+      const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
+      const { eventId, sessionId } = await encryptor.decrypt(input.eventKey);
+      const { person } = input;
+      await solidarity.rsvpNewPerson({
+        event_id: eventId,
+        event_session_id: sessionId,
+        person,
+      });
       return { success: true };
     }),
 });

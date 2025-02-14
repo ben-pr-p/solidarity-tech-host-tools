@@ -16,6 +16,9 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const searchParams = new URL(request.url).searchParams;
   const password = searchParams.get("pw");
 
+  console.log("context.env.ADMIN_PASSWORD", context.env.ADMIN_PASSWORD);
+  console.log("password", password);
+
   return await withPrefetch(context.env, async (queryClient, orpc) => {
     if (password !== context.env.ADMIN_PASSWORD) {
       return { unauthorized: true, providedPw: password };
@@ -47,9 +50,15 @@ function EventAccordion({ event }: { event: EventWithFutureSessions }) {
         </div>
       </AccordionTrigger>
       <AccordionContent>
-        {event.futureSessions.map((session) => (
-          <Session key={session.id} session={session} />
-        ))}
+        {event.futureSessions
+          .sort(
+            (a, b) =>
+              new Date(a.start_time).getTime() -
+              new Date(b.start_time).getTime()
+          )
+          .map((session) => (
+            <Session key={session.id} session={session} />
+          ))}
       </AccordionContent>
     </AccordionItem>
   );
@@ -88,6 +97,7 @@ function Session({ session }: { session: SessionWithSessionHostURL }) {
     <Card className="mb-4">
       <CardContent className="flex justify-between items-center p-4">
         <div>
+          <p className="font-bold underline text-gray-700">{session.title}</p>
           <p className="font-semibold">{formatDate(session.start_time)}</p>
           <p className="text-muted-foreground">
             {session.location_name || "Virtual"}

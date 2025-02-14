@@ -1,4 +1,4 @@
-import { cleanEnv, str } from "envalid";
+import { cleanEnv, str, num } from "envalid";
 
 export type Config = ReturnType<typeof getConfig>;
 
@@ -17,5 +17,6 @@ export const getConfig = (env: Record<string, string>) => {
     META_TITLE_HOST_PREFIX: str(),
     HEADER_BACKGROUND_COLOR: str(),
     HEADER_TEXT_COLOR: str(),
+    CREATE_RSVP_AGENT_USER_ID: num(),
   });
 };

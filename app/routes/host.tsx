@@ -1,5 +1,9 @@
 import type { Route } from "./+types/host";
-import { useSuspenseQuery, useMutation } from "@tanstack/react-query";
+import {
+  useSuspenseQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { withPrefetch } from "@/lib/orpcCaller.server";
 import { orpcFetchQuery } from "@/lib/orpcFetch";
 import { useMemo, useState } from "react";
@@ -7,11 +11,25 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Phone, MessageSquare, CheckCircle2, Users } from "lucide-react";
+import {
+  Phone,
+  MessageSquare,
+  CheckCircle2,
+  Users,
+  UserPlus,
+} from "lucide-react";
 import type { EventRSVP } from "@/lib/solidarity.server";
 import { cn } from "@/lib/utils";
 import invariant from "tiny-invariant";
 import { getEncryptor } from "@/lib/encrypt.server";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 
 export function meta({ data }: Route.MetaArgs) {
   const sessionStartTimeDate = new Date(data.session?.start_time ?? "");
@@ -142,8 +160,16 @@ function RSVPCard({ rsvp, eventKey }: RSVPCardProps) {
   const rsvpTime = new Date(rsvp.created_at);
   const rsvpTimeHumanized = humanizeTimestamp(rsvpTime.getTime());
 
+  const confirmedNotAttending = rsvp.is_attending === "no";
+
+  const bgClassName = (() => {
+    if (confirmedNotAttending) return "bg-red-50";
+    if (optimisticAttended) return "bg-green-50";
+    return "";
+  })();
+
   return (
-    <Card key={rsvp.id} className={optimisticAttended ? "bg-green-50" : ""}>
+    <Card key={rsvp.id} className={bgClassName}>
       <CardContent className="flex items-center justify-between p-4">
         <div className="flex flex-col">
           <h3 className="font-semibold">
@@ -182,6 +208,12 @@ function RSVPCard({ rsvp, eventKey }: RSVPCardProps) {
               {humanizeTimestamp(new Date(rsvp.updated_at).getTime())}
             </p>
           )}
+          {confirmedNotAttending && (
+            <p className="text-xs text-gray-500 mt-2">
+              <span className="font-semibold">Said Not Attending Anymore</span>{" "}
+              {humanizeTimestamp(new Date(rsvp.updated_at).getTime())}
+            </p>
+          )}
         </div>
         <div className="flex items-center space-x-2">
           <Checkbox
@@ -209,6 +241,7 @@ function RSVPCard({ rsvp, eventKey }: RSVPCardProps) {
 
 export default function HostTools({ loaderData }: Route.ComponentProps) {
   const { eventKey } = loaderData;
+  const queryClient = useQueryClient();
 
   const { data } = useSuspenseQuery(
     orpcFetchQuery.getEventWithSessionById.queryOptions({
@@ -220,8 +253,8 @@ export default function HostTools({ loaderData }: Route.ComponentProps) {
 
   const {
     data: rsvps,
-    isLoading: rsvpsLoading,
-    isError: rsvpsError,
+    isLoading: _rsvpsLoading,
+    isError: _rsvpsError,
   } = useSuspenseQuery(
     orpcFetchQuery.getSessionRsvpsByEventIdAndSessionId.queryOptions({
       input: {
@@ -229,6 +262,38 @@ export default function HostTools({ loaderData }: Route.ComponentProps) {
       },
     })
   );
+
+  const { mutate: mutateAddAttendee, isPending: isAddingAttendee } =
+    useMutation({
+      ...orpcFetchQuery.rsvpNewPerson.mutationOptions({}),
+      onSuccess: () => {
+        setIsAddAttendeeOpen(false);
+        queryClient.invalidateQueries({
+          ...orpcFetchQuery.getSessionRsvpsByEventIdAndSessionId.queryOptions({
+            input: {
+              eventKey,
+            },
+          }),
+        });
+      },
+    });
+
+  const handleAddAttendee = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.target as HTMLFormElement);
+    const newAttendee = {
+      first_name: formData.get("firstName") as string,
+      last_name: formData.get("lastName") as string,
+      email: formData.get("email") as string,
+      phone_number: formData.get("phoneNumber") as string,
+    };
+    mutateAddAttendee({
+      eventKey,
+      person: newAttendee,
+    });
+  };
+
+  const [isAddAttendeeOpen, setIsAddAttendeeOpen] = useState(false);
 
   const { event, session } = data;
 
@@ -250,6 +315,16 @@ export default function HostTools({ loaderData }: Route.ComponentProps) {
     return { confirmedCount: confirmed, totalCount: rsvps.length };
   }, [rsvps]);
 
+  const countBailed = filteredRSVPs.filter(
+    (rsvp) => rsvp.is_attending === "no"
+  ).length;
+
+  const filteredRSVPsWithNotAttendingList = filteredRSVPs.sort((a, b) => {
+    if (a.is_attending === "no" && b.is_attending !== "no") return 1;
+    if (a.is_attending !== "no" && b.is_attending === "no") return -1;
+    return a.user_id - b.user_id;
+  });
+
   return (
     <>
       <Card className="mb-6">
@@ -260,8 +335,49 @@ export default function HostTools({ loaderData }: Route.ComponentProps) {
               <Users size={20} />
               <span>{confirmedCount} confirmed</span>
               <span>/</span>
+              <span>{countBailed} bailed</span>
+              <span>/</span>
               <span>{totalCount} total</span>
             </div>
+
+            <Dialog
+              open={isAddAttendeeOpen}
+              onOpenChange={setIsAddAttendeeOpen}
+            >
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Add Unregistered Attendee
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Add Unregistered Attendee</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleAddAttendee} className="space-y-4">
+                  <div>
+                    <Label htmlFor="firstName">First Name</Label>
+                    <Input id="firstName" name="firstName" required />
+                  </div>
+                  <div>
+                    <Label htmlFor="lastName">Last Name</Label>
+                    <Input id="lastName" name="lastName" required />
+                  </div>
+                  <div>
+                    <Label htmlFor="email">Email</Label>
+                    <Input id="email" name="email" type="email" required />
+                  </div>
+                  <div>
+                    <Label htmlFor="phoneNumber">Phone Number</Label>
+                    <Input id="phoneNumber" name="phoneNumber" required />
+                  </div>
+
+                  <Button type="submit" disabled={isAddingAttendee}>
+                    {isAddingAttendee ? "Adding..." : "Add Attendee"}
+                  </Button>
+                </form>
+              </DialogContent>
+            </Dialog>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -301,11 +417,9 @@ export default function HostTools({ loaderData }: Route.ComponentProps) {
       />
 
       <div className="space-y-4">
-        {filteredRSVPs
-          .sort((a, b) => a.user_id - b.user_id)
-          .map((rsvp) => (
-            <RSVPCard key={rsvp.id} rsvp={rsvp} eventKey={eventKey} />
-          ))}
+        {filteredRSVPsWithNotAttendingList.map((rsvp) => (
+          <RSVPCard key={rsvp.id} rsvp={rsvp} eventKey={eventKey} />
+        ))}
       </div>
     </>
   );
