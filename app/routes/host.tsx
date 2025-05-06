@@ -94,6 +94,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
 // Go from 12145551212 to +1 (214) 555-1212
 const prettyPhoneNumber = (phone: string) => {
+  if (!phone) return undefined;
   return phone.replace(/^1?(\d{3})(\d{3})(\d{4})$/, "($1) $2-$3");
 };
 
