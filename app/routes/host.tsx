@@ -66,6 +66,12 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       })
     );
 
+    // Check if event is more than 2 days in the past
+    const now = new Date();
+    const sessionDate = new Date(session.start_time);
+    const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+    const isEventTooOld = sessionDate < twoDaysAgo;
+
     // Experiment with prefetching this or not
 
     await queryClient.prefetchQuery(
@@ -82,6 +88,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       event,
       session,
       eventKey,
+      isEventTooOld,
       meta: {
         titleHostPrefix: context.env.META_TITLE_HOST_PREFIX,
         description: context.env.META_DESCRIPTION,
@@ -180,8 +187,20 @@ function RSVPCard({ rsvp, eventKey }: RSVPCardProps) {
             {prettyPhoneNumber(rsvp.user_details.phone)}
           </p>
           <div className="mt-1">
-            <Chip color={rsvp.is_confirmed ? "green" : "yellow"}>
-              {rsvp.is_confirmed ? "Confirmed" : "Unconfirmed"}
+            <Chip
+              color={
+                rsvp.is_confirmed === true
+                  ? "green"
+                  : rsvp.is_confirmed === false
+                  ? "red"
+                  : "yellow"
+              }
+            >
+              {rsvp.is_confirmed === true
+                ? "Confirmed"
+                : rsvp.is_confirmed === false
+                ? "Not Attending"
+                : "Unconfirmed"}
             </Chip>
           </div>
           <div className="flex items-center space-x-2 mt-2">
@@ -241,7 +260,7 @@ function RSVPCard({ rsvp, eventKey }: RSVPCardProps) {
 }
 
 export default function HostTools({ loaderData }: Route.ComponentProps) {
-  const { eventKey } = loaderData;
+  const { eventKey, isEventTooOld } = loaderData;
   const queryClient = useQueryClient();
 
   const { data } = useSuspenseQuery(
@@ -263,6 +282,24 @@ export default function HostTools({ loaderData }: Route.ComponentProps) {
       },
     })
   );
+
+  // Show notice if event is more than 2 days old
+  if (isEventTooOld) {
+    return (
+      <Card className="mb-6 border-2 border-red-500">
+        <CardContent className="p-8">
+          <p className="text-center text-xl font-semibold text-red-600">
+            This is a past event link
+          </p>
+          <p className="text-center text-lg mt-4 text-gray-700">
+            You have opened a Zohran host link for an event that has already
+            occurred. If you need to access this data or believe this is an
+            error, please contact the campaign.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   const { mutate: mutateAddAttendee, isPending: isAddingAttendee } =
     useMutation({
@@ -321,6 +358,10 @@ export default function HostTools({ loaderData }: Route.ComponentProps) {
   ).length;
 
   const filteredRSVPsWithNotAttendingList = filteredRSVPs.sort((a, b) => {
+    if (a.is_confirmed === false || b.is_confirmed === false) {
+      if (a.is_confirmed !== false && b.is_confirmed === false) return -1;
+      if (a.is_confirmed === false && b.is_confirmed !== false) return 1;
+    }
     if (a.is_attending === "no" && b.is_attending !== "no") return 1;
     if (a.is_attending !== "no" && b.is_attending === "no") return -1;
     return a.user_id - b.user_id;
@@ -396,8 +437,17 @@ export default function HostTools({ loaderData }: Route.ComponentProps) {
             {formatDate(session.end_time, "time")}
           </p>
           <div className="mt-4 flex flex-wrap gap-4">
-            <Button onClick={() => copyPhoneNumbers(rsvps)}>
-              Copy All Host Phone Numbers
+            <Button
+              onClick={() =>
+                copyPhoneNumbers(
+                  rsvps.filter(
+                    (rsvp) =>
+                      rsvp.is_confirmed !== false && rsvp.is_attending !== "no"
+                  )
+                )
+              }
+            >
+              Copy Confirmed and Unconfirmed Host Phone Numbers
             </Button>
             <Button
               onClick={() =>
