@@ -33,25 +33,17 @@ import { Label } from "@/components/ui/label";
 import { config } from "@/config.server";
 
 export function meta({ data }: Route.MetaArgs) {
-  const sessionStartTimeDate = new Date(data.session?.start_time ?? "");
-  const sessionStartTime = sessionStartTimeDate.toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-
   return [
     {
-      title: `${config.META_TITLE_HOST_PREFIX} ${data.session.title} at ${sessionStartTime}`,
+      title: data.meta.title,
     },
-    { name: "description", content: config.META_DESCRIPTION },
-    { name: "image", content: config.META_SHARE_IMAGE_URL },
-    { name: "icon", content: config.FAVICON_URL },
+    { name: "description", content: data.meta.description },
+    { name: "image", content: data.meta.image },
+    { name: "icon", content: data.meta.icon },
   ];
 }
 
-export async function loader({ request, context }: Route.LoaderArgs) {
+export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const eventKey = url.searchParams.get("eventKey");
   invariant(eventKey, "eventKey is required");
@@ -83,12 +75,26 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       })
     );
 
+    const sessionStartTimeDate = new Date(session.start_time ?? "");
+    const sessionStartTime = sessionStartTimeDate.toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+
     return {
       eventId,
       sessionId,
       session,
       eventKey,
       isEventTooOld,
+      meta: {
+        title: `${config.META_TITLE_HOST_PREFIX} ${session.title} at ${sessionStartTime}`,
+        description: config.META_DESCRIPTION,
+        image: config.META_SHARE_IMAGE_URL,
+        icon: config.FAVICON_URL,
+      },
     };
   });
 }
