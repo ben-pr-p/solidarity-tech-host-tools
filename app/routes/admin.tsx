@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import type { Event, EventSession } from "@/lib/solidarity.server";
 import type { Route } from "./+types/admin";
 import { withPrefetch } from "@/lib/orpcCaller.server";
+import { config } from "@/config.server";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { orpcFetch, orpcFetchQuery } from "@/lib/orpcFetch";
 import { useEffect } from "react";
@@ -17,11 +18,11 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const searchParams = new URL(request.url).searchParams;
   const password = searchParams.get("pw");
 
-  console.log("context.env.ADMIN_PASSWORD", context.env.ADMIN_PASSWORD);
+  console.log("config.ADMIN_PASSWORD", config.ADMIN_PASSWORD);
   console.log("password", password);
 
-  return await withPrefetch(context.env, async (queryClient, orpc) => {
-    if (password !== context.env.ADMIN_PASSWORD) {
+  return await withPrefetch(config, async (queryClient, orpc) => {
+    if (password !== config.ADMIN_PASSWORD) {
       return { unauthorized: true, providedPw: password };
     }
 

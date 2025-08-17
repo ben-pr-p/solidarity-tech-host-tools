@@ -5,16 +5,12 @@ import {
   type InferRouterOutputs,
 } from "@orpc/server";
 import { z } from "zod";
-import { type Config } from "@/config.server";
+import { config } from "@/config.server";
 import { getSolidarity } from "@/lib/solidarity.server";
 import { getEncryptor } from "@/lib/encrypt.server";
 
-type ORPCContext = {
-  env: Config;
-};
-
 // DB is inserted in request handler or test driver
-const base = os.context<ORPCContext>().use(async ({ next, path, context }) => {
+const base = os.context().use(async ({ next, path, context }) => {
   try {
     const result = await next({ context });
     return result;
@@ -71,7 +67,7 @@ export const router = base.router({
     .input(z.object({ pw: z.string() }))
     .handler(async ({ input, context }) => {
       const searchParamsPw = input.pw;
-      if (searchParamsPw !== context.env.ADMIN_PASSWORD) {
+      if (searchParamsPw !== config.ADMIN_PASSWORD) {
         throw new ORPCError({
           code: "UNAUTHORIZED",
           message: "Invalid password",
@@ -79,8 +75,8 @@ export const router = base.router({
         });
       }
 
-      const solidarity = getSolidarity(context.env);
-      const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
+      const solidarity = getSolidarity(config);
+      const encryptor = getEncryptor(config.SYMMETRIC_ENCRYPTION_KEY);
       const events = await solidarity.listEvents({
         since: new Date().toISOString(),
       });
@@ -92,7 +88,7 @@ export const router = base.router({
     .input(z.object({ pw: z.string(), offset: z.number(), limit: z.number() }))
     .handler(async ({ input, context }) => {
       const searchParamsPw = input.pw;
-      if (searchParamsPw !== context.env.ADMIN_PASSWORD) {
+      if (searchParamsPw !== config.ADMIN_PASSWORD) {
         throw new ORPCError({
           code: "UNAUTHORIZED",
           message: "Invalid password",
@@ -100,8 +96,8 @@ export const router = base.router({
         });
       }
 
-      const solidarity = getSolidarity(context.env);
-      const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
+      const solidarity = getSolidarity(config);
+      const encryptor = getEncryptor(config.SYMMETRIC_ENCRYPTION_KEY);
       const events = await solidarity.listEventsPage({
         since: new Date().toISOString(),
         offset: input.offset,
@@ -121,9 +117,9 @@ export const router = base.router({
   getEventSessionById: base
     .input(z.object({ eventKey: z.string() }))
     .handler(async ({ input, context }) => {
-      const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
+      const encryptor = getEncryptor(config.SYMMETRIC_ENCRYPTION_KEY);
       const { sessionId } = await encryptor.decrypt(input.eventKey);
-      const solidarity = getSolidarity(context.env);
+      const solidarity = getSolidarity(config);
       const response = await solidarity.getEventSession(sessionId);
       return response.data;
     }),
@@ -131,9 +127,9 @@ export const router = base.router({
   getSessionRsvpsByEventIdAndSessionId: base
     .input(z.object({ eventKey: z.string() }))
     .handler(async ({ input, context }) => {
-      const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
+      const encryptor = getEncryptor(config.SYMMETRIC_ENCRYPTION_KEY);
       const { eventId, sessionId } = await encryptor.decrypt(input.eventKey);
-      const solidarity = getSolidarity(context.env);
+      const solidarity = getSolidarity(config);
       const [sessionRsvps, sessionAttendances] = await Promise.all([
         solidarity
           .listEventRSVPs({
@@ -167,7 +163,7 @@ export const router = base.router({
       })
     )
     .handler(async ({ input, context }) => {
-      const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
+      const encryptor = getEncryptor(config.SYMMETRIC_ENCRYPTION_KEY);
       const { eventId, sessionId } = await encryptor.decrypt(input.eventKey);
       const payload = {
         event_id: eventId,
@@ -175,7 +171,7 @@ export const router = base.router({
         user_id: input.userId,
         attended: true,
       };
-      const solidarity = getSolidarity(context.env);
+      const solidarity = getSolidarity(config);
       const response = await solidarity.createEventAttendance(payload);
       return response.data;
     }),
@@ -188,10 +184,10 @@ export const router = base.router({
       })
     )
     .handler(async ({ input, context }) => {
-      const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
+      const encryptor = getEncryptor(config.SYMMETRIC_ENCRYPTION_KEY);
       const { eventId, sessionId } = await encryptor.decrypt(input.eventKey);
       // Fetch existing attendances to find the attendance ID
-      const solidarity = getSolidarity(context.env);
+      const solidarity = getSolidarity(config);
       const attendancesResponse = await solidarity.listEventAttendances({
         event_id: eventId,
         session_id: sessionId,
@@ -228,8 +224,8 @@ export const router = base.router({
       })
     )
     .handler(async ({ input, context }) => {
-      const solidarity = getSolidarity(context.env);
-      const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
+      const solidarity = getSolidarity(config);
+      const encryptor = getEncryptor(config.SYMMETRIC_ENCRYPTION_KEY);
       const { eventId, sessionId } = await encryptor.decrypt(input.eventKey);
       const { person } = input;
       await solidarity.rsvpNewPerson({
