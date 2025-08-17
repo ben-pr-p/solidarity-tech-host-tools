@@ -30,6 +30,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { config } from "@/config.server";
 
 export function meta({ data }: Route.MetaArgs) {
   const sessionStartTimeDate = new Date(data.session?.start_time ?? "");
@@ -42,11 +43,11 @@ export function meta({ data }: Route.MetaArgs) {
 
   return [
     {
-      title: `${data.meta.titleHostPrefix} ${data.session.title} at ${sessionStartTime}`,
+      title: `${config.META_TITLE_HOST_PREFIX} ${data.session.title} at ${sessionStartTime}`,
     },
-    { name: "description", content: data.meta.description },
-    { name: "image", content: data.meta.image },
-    { name: "icon", content: data.meta.icon },
+    { name: "description", content: config.META_DESCRIPTION },
+    { name: "image", content: config.META_SHARE_IMAGE_URL },
+    { name: "icon", content: config.FAVICON_URL },
   ];
 }
 
@@ -54,10 +55,10 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const eventKey = url.searchParams.get("eventKey");
   invariant(eventKey, "eventKey is required");
-  const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
+  const encryptor = getEncryptor(config.SYMMETRIC_ENCRYPTION_KEY);
   const { eventId, sessionId } = await encryptor.decrypt(eventKey);
 
-  return await withPrefetch(context.env, async (queryClient, orpc) => {
+  return await withPrefetch(config, async (queryClient, orpc) => {
     const session = await queryClient.fetchQuery(
       orpc.getEventSessionById.queryOptions({
         input: {
@@ -88,12 +89,6 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       session,
       eventKey,
       isEventTooOld,
-      meta: {
-        titleHostPrefix: context.env.META_TITLE_HOST_PREFIX,
-        description: context.env.META_DESCRIPTION,
-        image: context.env.META_SHARE_IMAGE_URL,
-        icon: context.env.FAVICON_URL,
-      },
     };
   });
 }
