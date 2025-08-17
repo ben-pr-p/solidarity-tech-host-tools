@@ -30,6 +30,42 @@ const base = os.context<ORPCContext>().use(async ({ next, path, context }) => {
   }
 });
 
+type EventsList = Awaited<
+  ReturnType<ReturnType<typeof getSolidarity>["listEvents"]>
+>;
+
+async function prepareEventsToHaveHostUrls(
+  events: EventsList["data"],
+  encryptor: ReturnType<typeof getEncryptor>
+) {
+  return await Promise.all(
+    events.map(async (event) => {
+      const futureSessions = event.event_sessions.filter(
+        (session) => new Date(session.start_time) > new Date()
+      );
+
+      const futureSessionsWithHostURLs = await Promise.all(
+        futureSessions.map(async (session) => {
+          const encryptedSessionHostURLKey = await encryptor.encrypt({
+            eventId: event.id,
+            sessionId: session.id,
+          });
+
+          const hostSearchParams = new URLSearchParams();
+          hostSearchParams.set("eventKey", encryptedSessionHostURLKey);
+
+          return {
+            ...session,
+            host_after_domain: `/host?${hostSearchParams.toString()}`,
+          };
+        })
+      );
+
+      return { ...event, futureSessions: futureSessionsWithHostURLs };
+    })
+  ).then((events) => events.filter((event) => event.futureSessions.length > 0));
+}
+
 export const router = base.router({
   listEventsWithSessionHostURLsInFuture: base
     .input(z.object({ pw: z.string() }))
@@ -45,50 +81,51 @@ export const router = base.router({
 
       const solidarity = getSolidarity(context.env);
       const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
-      const events = await solidarity.listEvents();
+      const events = await solidarity.listEvents({
+        since: new Date().toISOString(),
+      });
 
-      return await Promise.all(
-        events.data.map(async (event) => {
-          const futureSessions = event.event_sessions.filter(
-            (session) => new Date(session.start_time) > new Date()
-          );
-
-          const futureSessionsWithHostURLs = await Promise.all(
-            futureSessions.map(async (session) => {
-              const encryptedSessionHostURLKey = await encryptor.encrypt({
-                eventId: event.id,
-                sessionId: session.id,
-              });
-
-              const hostSearchParams = new URLSearchParams();
-              hostSearchParams.set("eventKey", encryptedSessionHostURLKey);
-
-              return {
-                ...session,
-                host_after_domain: `/host?${hostSearchParams.toString()}`,
-              };
-            })
-          );
-
-          return { ...event, futureSessions: futureSessionsWithHostURLs };
-        })
-      ).then((events) =>
-        events.filter((event) => event.futureSessions.length > 0)
-      );
+      return await prepareEventsToHaveHostUrls(events.data, encryptor);
     }),
 
-  getEventWithSessionById: base
+  listEventsWithSessionHostURLsInFutureWithPageParameters: base
+    .input(z.object({ pw: z.string(), offset: z.number(), limit: z.number() }))
+    .handler(async ({ input, context }) => {
+      const searchParamsPw = input.pw;
+      if (searchParamsPw !== context.env.ADMIN_PASSWORD) {
+        throw new ORPCError({
+          code: "UNAUTHORIZED",
+          message: "Invalid password",
+          status: 401,
+        });
+      }
+
+      const solidarity = getSolidarity(context.env);
+      const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
+      const events = await solidarity.listEventsPage({
+        since: new Date().toISOString(),
+        offset: input.offset,
+        limit: input.limit,
+      });
+
+      const eventsForClient = await prepareEventsToHaveHostUrls(
+        events.data,
+        encryptor
+      );
+      return {
+        events: eventsForClient,
+        nextOffset: input.offset + input.limit,
+      };
+    }),
+
+  getEventSessionById: base
     .input(z.object({ eventKey: z.string() }))
     .handler(async ({ input, context }) => {
       const encryptor = getEncryptor(context.env.SYMMETRIC_ENCRYPTION_KEY);
-      const { eventId, sessionId } = await encryptor.decrypt(input.eventKey);
+      const { sessionId } = await encryptor.decrypt(input.eventKey);
       const solidarity = getSolidarity(context.env);
-      const response = await solidarity.getEvent(eventId);
-      const event = response.data;
-      const session = event.event_sessions.find(
-        (session) => session.id === sessionId
-      );
-      return { event, session };
+      const response = await solidarity.getEventSession(sessionId);
+      return response.data;
     }),
 
   getSessionRsvpsByEventIdAndSessionId: base

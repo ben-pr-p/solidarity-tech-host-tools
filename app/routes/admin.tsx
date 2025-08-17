@@ -9,8 +9,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import type { Event, EventSession } from "@/lib/solidarity.server";
 import type { Route } from "./+types/admin";
 import { withPrefetch } from "@/lib/orpcCaller.server";
-import { useQuery } from "@tanstack/react-query";
-import { orpcFetchQuery } from "@/lib/orpcFetch";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { orpcFetch, orpcFetchQuery } from "@/lib/orpcFetch";
+import { useEffect } from "react";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const searchParams = new URL(request.url).searchParams;
@@ -23,13 +24,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     if (password !== context.env.ADMIN_PASSWORD) {
       return { unauthorized: true, providedPw: password };
     }
-    await queryClient.prefetchQuery(
-      orpc.listEventsWithSessionHostURLsInFuture.queryOptions({
-        input: {
-          pw: password,
-        },
-      })
-    );
+
     return { unauthorized: false, providedPw: password };
   });
 }
@@ -116,13 +111,32 @@ export default function HostTools({ loaderData }: Route.ComponentProps) {
     return <div>Unauthorized</div>;
   }
 
-  const { data, isLoading, error } = useQuery(
-    orpcFetchQuery.listEventsWithSessionHostURLsInFuture.queryOptions({
-      input: {
+  const { data, isLoading, error, isError, fetchNextPage } = useInfiniteQuery({
+    queryKey: ["listEventsWithSessionHostURLsInFutureWithPageParameters"],
+    queryFn: ({ pageParam }) =>
+      orpcFetch.listEventsWithSessionHostURLsInFutureWithPageParameters({
         pw: loaderData.providedPw!,
-      },
-    })
-  );
+        offset: pageParam,
+        limit: 5,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextOffset,
+  });
+
+  const countPages = data?.pages.length;
+  const mostRecentPageLength =
+    data?.pages[data.pages.length - 1]?.events.length;
+
+  useEffect(() => {
+    if (
+      !isLoading &&
+      !isError &&
+      mostRecentPageLength &&
+      mostRecentPageLength > 0
+    ) {
+      fetchNextPage();
+    }
+  }, [isLoading, isError, countPages, mostRecentPageLength, fetchNextPage]);
 
   if (isLoading) {
     return (
@@ -136,11 +150,22 @@ export default function HostTools({ loaderData }: Route.ComponentProps) {
     return <div>Error: {error.message}</div>;
   }
 
+  const finished = !isLoading && !isError && mostRecentPageLength === 0;
+
   return (
-    <Accordion type="single" collapsible className="w-full">
-      {data?.map((event) => (
-        <EventAccordion key={event.id} event={event} />
-      ))}
-    </Accordion>
+    <>
+      {!finished && (
+        <div className="flex justify-center items-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+        </div>
+      )}
+      <Accordion type="single" collapsible className="w-full">
+        {data?.pages
+          .flatMap((page) => page.events)
+          .map((event) => (
+            <EventAccordion key={event.id} event={event} />
+          ))}
+      </Accordion>
+    </>
   );
 }

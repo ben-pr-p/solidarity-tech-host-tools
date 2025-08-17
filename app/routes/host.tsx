@@ -42,7 +42,7 @@ export function meta({ data }: Route.MetaArgs) {
 
   return [
     {
-      title: `${data.meta.titleHostPrefix} ${data.event.title} at ${sessionStartTime}`,
+      title: `${data.meta.titleHostPrefix} ${data.session.title} at ${sessionStartTime}`,
     },
     { name: "description", content: data.meta.description },
     { name: "image", content: data.meta.image },
@@ -58,8 +58,8 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const { eventId, sessionId } = await encryptor.decrypt(eventKey);
 
   return await withPrefetch(context.env, async (queryClient, orpc) => {
-    const { event, session } = await queryClient.fetchQuery(
-      orpc.getEventWithSessionById.queryOptions({
+    const session = await queryClient.fetchQuery(
+      orpc.getEventSessionById.queryOptions({
         input: {
           eventKey,
         },
@@ -85,7 +85,6 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     return {
       eventId,
       sessionId,
-      event,
       session,
       eventKey,
       isEventTooOld,
@@ -264,7 +263,7 @@ export default function HostTools({ loaderData }: Route.ComponentProps) {
   const queryClient = useQueryClient();
 
   const { data } = useSuspenseQuery(
-    orpcFetchQuery.getEventWithSessionById.queryOptions({
+    orpcFetchQuery.getEventSessionById.queryOptions({
       input: {
         eventKey,
       },
@@ -333,7 +332,8 @@ export default function HostTools({ loaderData }: Route.ComponentProps) {
 
   const [isAddAttendeeOpen, setIsAddAttendeeOpen] = useState(false);
 
-  const { event, session } = data;
+  const session = data;
+  // const { event, session } = data;
 
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -344,7 +344,7 @@ export default function HostTools({ loaderData }: Route.ComponentProps) {
         .includes(searchTerm.toLowerCase())
     ) || [];
 
-  if (!event || !session) {
+  if (!session) {
     return <div>Loading...</div>;
   }
 
@@ -372,7 +372,7 @@ export default function HostTools({ loaderData }: Route.ComponentProps) {
       <Card className="mb-6">
         <CardHeader>
           <CardTitle className="flex justify-between items-center flex-col space-y-2">
-            <span>{event.title}</span>
+            <span>{session.title}</span>
             <div className="flex items-center space-x-2 text-sm font-normal">
               <Users size={20} />
               <span>{confirmedCount} confirmed</span>
@@ -488,11 +488,13 @@ function formatDate(
       year: "numeric",
       month: "long",
       day: "numeric",
+      timeZone: "America/New_York",
     });
   } else {
     return date.toLocaleTimeString("en-US", {
       hour: "numeric",
       minute: "2-digit",
+      timeZone: "America/New_York",
     });
   }
 }

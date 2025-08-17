@@ -20,6 +20,11 @@ curl --request GET \
      --url 'https://api.solidarity.tech/v1/event_sessions?_limit=20&_offset=5&_since=0&event_id=13' \
      --header 'authorization: Bearer SOLIDARITY_TECH_API_KEY'
 
+## Get event session
+curl --request GET \
+     --url 'https://api.solidarity.tech/v1/event_sessions/1314' \
+     --header 'authorization: Bearer SOLIDARITY_TECH_API_KEY'
+
 ## List event RSVPs
 curl --request GET \
      --url 'https://api.solidarity.tech/v1/event_rsvps?_limit=20&_offset=0&_since=0&event_id=0' \
@@ -90,7 +95,7 @@ curl --request POST \
 export interface ListEventsParams {
   limit?: number;
   offset?: number;
-  since?: number;
+  since?: string; // ISO string
 }
 
 export interface ListEventSessionsParams {
@@ -181,8 +186,8 @@ export interface Event {
   location_data: LocationData | null;
   event_sessions: EventSession[];
   event_page_url: string;
-  rsvps_count: number;
-  attendance_count: number;
+  // rsvps_count: number;
+  // attendance_count: number;
   automation_status: AutomationStatus;
   created_at: string;
 }
@@ -282,12 +287,16 @@ export function getSolidarity(config: Config) {
         url += `?${queryString}`;
       }
     }
+    const timeEventKey = `apiRequest ${url}`;
+    console.time(timeEventKey);
     const response = await fetch(url, {
       method,
       headers: getHeaders(),
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
-    return response.json();
+    const jsonResponse = await response.json();
+    console.timeEnd(timeEventKey);
+    return jsonResponse as T;
   }
 
   async function fetchAllPages<T>(
@@ -318,6 +327,18 @@ export function getSolidarity(config: Config) {
     }
   }
 
+  async function listEventsPage(
+    params: ListEventsParams
+  ): Promise<ApiResponse<Event[]>> {
+    return apiRequest("/events", {
+      params: {
+        _limit: params.limit,
+        _offset: params.offset,
+        _since: params.since,
+      },
+    });
+  }
+
   async function listEvents(
     params: ListEventsParams = {}
   ): Promise<ApiResponse<Event[]>> {
@@ -336,6 +357,12 @@ export function getSolidarity(config: Config) {
 
   async function getEvent(eventId: number): Promise<ApiResponse<Event>> {
     return apiRequest(`/events/${eventId}`);
+  }
+
+  async function getEventSession(
+    eventSessionId: number
+  ): Promise<ApiResponse<EventSession>> {
+    return apiRequest(`/event_sessions/${eventSessionId}`);
   }
 
   async function listEventSessions(
@@ -448,7 +475,9 @@ export function getSolidarity(config: Config) {
 
   return {
     listEvents,
-    getEvent,
+    listEventsPage,
+    // getEvent,
+    getEventSession,
     listEventSessions,
     listEventRSVPs,
     listEventAttendances,
